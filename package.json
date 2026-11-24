@@ -10,7 +10,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "test": "node test/plan.test.mjs"
+    "test": "node test/plan.test.mjs && node test/runner.test.mjs"
   },
   "bin": {
     "corebox": "./src/cli.mjs"

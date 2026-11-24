@@ -22,3 +22,5 @@ function commandForStep(packageManager, step) {
   }
   return `${packageManager} ${step}`;
 }
+
+export * from "./runner.mjs";
