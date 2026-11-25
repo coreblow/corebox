@@ -114,6 +114,25 @@ export function generateSeatbeltProfile(workspacePath) {
 }
 
 /**
+ * Sends a signal to the spawned child's process group when detached, falling back to the child PID.
+ */
+function signalChildTree(child, signal) {
+  if (process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // Fall back to direct child kill if the process group already exited.
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Ignore if already exited.
+  }
+}
+
+/**
  * Executes a command inside the selected sandbox isolation environment.
  */
 export function executeSandboxed(command, args = [], options = {}) {
@@ -144,6 +163,7 @@ export function executeSandboxed(command, args = [], options = {}) {
         "--chdir", realWs,
         "--unshare-all",
         "--share-net",
+        "--die-with-parent",
         command,
         ...args,
       ];
@@ -173,6 +193,7 @@ export function executeSandboxed(command, args = [], options = {}) {
       child = spawn(bin, spawnArgs, {
         cwd: realWs,
         env,
+        detached: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (err) {
@@ -180,15 +201,22 @@ export function executeSandboxed(command, args = [], options = {}) {
     }
 
     let timer;
+    let killTimer;
+    let streamDrainTimer;
+    const clearTimers = () => {
+      if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      if (streamDrainTimer) clearTimeout(streamDrainTimer);
+    };
+
     if (timeoutMs > 0) {
       timer = setTimeout(() => {
         timedOut = true;
-        try {
-          child.kill("SIGTERM");
-          setTimeout(() => {
-            try { child.kill("SIGKILL"); } catch {}
-          }, 1000);
-        } catch {}
+        signalChildTree(child, "SIGTERM");
+        killTimer = setTimeout(() => {
+          signalChildTree(child, "SIGKILL");
+        }, 1000);
+        killTimer.unref?.();
       }, timeoutMs);
     }
 
@@ -200,13 +228,23 @@ export function executeSandboxed(command, args = [], options = {}) {
       stderr += chunk.toString("utf8");
     });
 
+    child.on("exit", () => {
+      if (!timedOut) return;
+      // Ensure orphaned grandchildren inside namespaces cannot hold pipes open forever.
+      streamDrainTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      }, 250);
+      streamDrainTimer.unref?.();
+    });
+
     child.on("error", (err) => {
-      if (timer) clearTimeout(timer);
+      clearTimers();
       reject(err);
     });
 
     child.on("close", (code, signal) => {
-      if (timer) clearTimeout(timer);
+      clearTimers();
       const durationMs = Date.now() - startTime;
       resolve({
         exitCode: code ?? (signal ? 128 : 1),
