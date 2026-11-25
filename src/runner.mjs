@@ -137,10 +137,11 @@ export function executeSandboxed(command, args = [], options = {}) {
       bin = "bwrap";
       spawnArgs = [
         "--ro-bind", "/", "/",
-        "--bind", realWs, realWs,
         "--dev", "/dev",
         "--proc", "/proc",
         "--tmpfs", "/tmp",
+        "--bind", realWs, realWs,
+        "--chdir", realWs,
         "--unshare-all",
         "--share-net",
         command,
