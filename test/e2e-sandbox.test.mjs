@@ -103,15 +103,23 @@ try {
       fs.writeFileSync(path.join(${JSON.stringify(realWorkspace)}, "bwrap-ws.txt"), "ws-ok");
       // b) Isolated /tmp write must succeed inside bwrap without leaking to host /tmp
       fs.writeFileSync(${JSON.stringify(hostTmpMarker)}, "isolated-tmp-ok");
-      // c) Host outside-workspace write must fail (read-only root bind)
-      let outsideErr = "NONE";
+      // c) Host /tmp outside-workspace directory is shadowed by --tmpfs /tmp (ENOENT)
+      let tmpOutsideErr = "NONE";
       try {
         fs.writeFileSync(path.join(${JSON.stringify(realOutside)}, "escape.txt"), "nope");
       } catch (err) {
-        outsideErr = err.code || "ERR";
+        tmpOutsideErr = err.code || "ERR";
+      }
+      // d) Existing host path outside workspace is read-only (--ro-bind / /)
+      let roOutsideErr = "NONE";
+      try {
+        fs.writeFileSync("/etc/corebox-escape-test.txt", "nope");
+      } catch (err) {
+        roOutsideErr = err.code || "ERR";
       }
       console.log(JSON.stringify({
-        outsideErr,
+        tmpOutsideErr,
+        roOutsideErr,
         tmpInside: fs.readFileSync(${JSON.stringify(hostTmpMarker)}, "utf8"),
         secret: process.env.COREBLOW_BWRAP_SECRET || null,
         token: process.env.GITHUB_TOKEN || null,
@@ -138,7 +146,8 @@ try {
 
     assert.equal(bwrapRes.exitCode, 0, `bwrap execution failed: ${bwrapRes.stderr}`);
     const parsed = JSON.parse(bwrapRes.stdout.trim());
-    assert.ok(["EROFS", "EACCES", "EPERM"].includes(parsed.outsideErr), `Expected read-only failure outside workspace, got: ${parsed.outsideErr}`);
+    assert.equal(parsed.tmpOutsideErr, "ENOENT", `Expected /tmp outside dir to be shadowed (ENOENT), got: ${parsed.tmpOutsideErr}`);
+    assert.ok(["EROFS", "EACCES", "EPERM"].includes(parsed.roOutsideErr), `Expected read-only failure on /etc, got: ${parsed.roOutsideErr}`);
     assert.equal(parsed.tmpInside, "isolated-tmp-ok");
     assert.equal(parsed.secret, null, "COREBLOW_BWRAP_SECRET must be scrubbed inside bwrap");
     assert.equal(parsed.token, null, "GITHUB_TOKEN must be scrubbed inside bwrap");
