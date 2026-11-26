@@ -24,7 +24,7 @@ This repository follows the same ecosystem split that CoreBlow uses to keep rele
   - **Linux Bubblewrap (`bwrap`)**: Unprivileged user-namespace containerization with read-only root mount and writable workspace bind.
   - **Docker Container**: Ephemeral containerized runs with `--read-only` root filesystem.
   - **Process Isolation**: Clean process runner fallback with env scrubbing and timeout supervision.
-- **Strict Write Containment**: Writes outside the workspace are blocked with `EPERM` (macOS Seatbelt) or read-only filesystem errors.
+- **Strict Write Containment**: Writes outside the workspace are blocked with `EPERM` (macOS Seatbelt) or `EROFS`/read-only filesystem errors (Linux `bwrap` with `--ro-bind / /` and isolated `--tmpfs /tmp`).
 - **Credential Scrubbing**: Strips sensitive authentication tokens, API keys, and cloud secrets (`TOKEN`, `KEY`, `SECRET`, `AUTH`, `AWS_*`, `GITHUB_*`, `COREBLOW_*`) from child process environments.
 - **Deterministic Timeouts**: Supervised execution terminating runaway or hanging child processes.
 
